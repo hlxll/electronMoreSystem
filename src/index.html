@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'"
+    />
+    <title>Electron 桌面应用</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="card">
+      <div class="icon" aria-hidden="true">E</div>
+      <p class="eyebrow">桌面应用已就绪</p>
+      <h1>你好，Electron</h1>
+      <p class="description">
+        这是你的 Electron 项目起点。现在可以开始构建跨平台桌面应用了。
+      </p>
+      <div class="details">
+        <span class="label">运行平台</span>
+        <span id="platform">正在读取…</span>
+      </div>
+      <p class="versions" id="versions"></p>
+      <button id="selectBut">查询</button>
+      <span id="dataId"></span>
+      <button id="renderProcess">查询渲染进程</button>
+    </main>
+    <script src="./renderer.js"></script>
+  </body>
+</html>
