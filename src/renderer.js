@@ -139,6 +139,115 @@ document.getElementById('workerTerminate').addEventListener('click', () => {
   appendLog('Worker 已终止');
 });
 
+// ---------- 应用更新 ----------
+
+const updateStatusEl = document.getElementById('updateStatus');
+const updateCheckBtn = document.getElementById('updateCheckBtn');
+const updateDownloadBtn = document.getElementById('updateDownloadBtn');
+const updateInstallBtn = document.getElementById('updateInstallBtn');
+
+const UPDATE_TEXT = {
+  idle: () => '尚未检查更新',
+  checking: () => '正在检查更新…',
+  available: (s) => `发现新版本 ${s.version}，可点击下载`,
+  'not-available': (s) => `已是最新版本${s.version ? `（远端 ${s.version}）` : ''}`,
+  downloading: (s) => `正在下载… ${s.percent}%`,
+  downloaded: (s) => `新版本 ${s.version} 已下载，重启后完成安装`,
+  dev: () => '开发环境（未打包）不支持自动更新',
+  error: (s) => `检查更新失败：${s.message}`,
+};
+
+function renderUpdateStatus(status) {
+  if (!status) return;
+  const state = status.state ?? 'idle';
+  const describe = UPDATE_TEXT[state];
+  updateStatusEl.textContent = describe ? describe(status) : state;
+
+  updateCheckBtn.disabled = state === 'checking' || state === 'downloading';
+  updateDownloadBtn.disabled = state !== 'available';
+  updateInstallBtn.disabled = state !== 'downloaded';
+}
+
+updateCheckBtn.addEventListener('click', async () => {
+  const result = await window.desktop.checkUpdate();
+  // 成功时状态由 update:status 事件推送，失败/开发环境时直接用返回值渲染
+  if (!result?.ok) renderUpdateStatus(result);
+});
+
+updateDownloadBtn.addEventListener('click', async () => {
+  updateDownloadBtn.disabled = true;
+  const result = await window.desktop.downloadUpdate();
+  if (!result?.ok) renderUpdateStatus(result);
+});
+
+updateInstallBtn.addEventListener('click', async () => {
+  updateInstallBtn.disabled = true;
+  const result = await window.desktop.installUpdate({ silent: false, forceRunAfter: true });
+  if (!result?.ok) renderUpdateStatus(result);
+});
+
+window.desktop.onUpdateStatus(renderUpdateStatus);
+window.desktop.getUpdateStatus().then(renderUpdateStatus);
+
+// ---------- 前端热更新（测试用） ----------
+
+const HOT_UPDATE_SERVER = 'http://127.0.0.1:3001';
+const HOT_UPDATE_FILES = ['index.html', 'renderer.js', 'styles.css'];
+
+const hotUpdateResult = document.getElementById('hotUpdateResult');
+const hotUpdateApplyBtn = document.getElementById('hotUpdateApplyBtn');
+const hotUpdateClearBtn = document.getElementById('hotUpdateClearBtn');
+
+function setHotResult(msg, isError = false) {
+  hotUpdateResult.textContent = msg;
+  hotUpdateResult.style.color = isError ? '#c00' : '#060';
+}
+
+hotUpdateApplyBtn.addEventListener('click', async () => {
+  hotUpdateApplyBtn.disabled = true;
+  try {
+    setHotResult(`[热更] 正在从 ${HOT_UPDATE_SERVER} 下载…`);
+    const results = [];
+
+    for (const file of HOT_UPDATE_FILES) {
+      const url = `${HOT_UPDATE_SERVER}/${file}`;
+      let resp;
+      try {
+        resp = await fetch(url);
+      } catch (e) {
+        throw new Error(`无法连接 ${HOT_UPDATE_SERVER}，请确认 npm run update-server 已启动`);
+      }
+      if (!resp.ok) throw new Error(`${file} 下载失败：HTTP ${resp.status}`);
+      const content = await resp.text();
+      const writeRes = await window.desktop.writeHotPatch(file, content);
+      if (!writeRes.ok) throw new Error(`${file} 写入失败：${writeRes.error}`);
+      results.push(`  ✓ ${file} (${content.length}B) → ${writeRes.path}`);
+    }
+
+    setHotResult(`[热更] 补丁写入成功：\n${results.join('\n')}\n\n即将刷新页面以加载补丁…`);
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) {
+    setHotResult(`[热更] 失败：${e.message}`, true);
+  } finally {
+    hotUpdateApplyBtn.disabled = false;
+  }
+});
+
+hotUpdateClearBtn.addEventListener('click', async () => {
+  hotUpdateClearBtn.disabled = true;
+  try {
+    setHotResult('[热更] 正在清除补丁…');
+    const res = await window.desktop.clearHotPatch();
+    if (!res.ok) throw new Error(res.error);
+    setHotResult('[热更] 补丁已清除，即将刷新页面恢复原始入口…');
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) {
+    setHotResult(`[热更] 清除失败：${e.message}`, true);
+  } finally {
+    hotUpdateClearBtn.disabled = false;
+  }
+});
+
 // ---------- 配置读写 ----------
 
 const configResult = document.getElementById('configResult');

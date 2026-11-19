@@ -23,4 +23,9 @@ contextBridge.exposeInMainWorld('desktop', {
     ipcRenderer.on('update:status', listener);
     return () => ipcRenderer.removeListener('update:status', listener);
   },
+  // 热更新补丁：写入 / 清理
+  // 注意：补丁写完后需 mainWindow.reload() 或重启才生效
+  writeHotPatch: (relativePath, content, sha512) =>
+    ipcRenderer.invoke('hotupdate:write-patch', relativePath, content, sha512 ? { sha512 } : {}),
+  clearHotPatch: () => ipcRenderer.invoke('hotupdate:clear-patch'),
 });

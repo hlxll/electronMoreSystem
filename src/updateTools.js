@@ -10,6 +10,8 @@
  * 3. 更新源必须比当前安装包版本号更高才会被判定为 update-available。
  */
 const { app, ipcMain } = require('electron');
+const fs = require('node:fs');
+const path = require('node:path');
 const { autoUpdater } = require('electron-updater');
 
 let targetWindow = null;
@@ -39,6 +41,7 @@ const DEV_HINT = '开发环境（未打包）不支持自动更新，请先执�
  * @param {boolean} [options.autoDownload] 发现新版本后是否自动下载，默认 false
  * @param {object} [options.logger] 日志对象，默认 console
  */
+let writeLog = fs.createWriteStream(app.isPackaged ? path.join(process.resourcesPath, 'public/app.log') : path.join(__dirname, '../public/app.log'), { flags: 'a' });
 function setup(options = {}) {
   const { window, feedUrl, autoDownload = false, logger = console } = options;
   if (window) targetWindow = window;
@@ -51,7 +54,9 @@ function setup(options = {}) {
   autoUpdater.autoInstallOnAppQuit = true;
 
   if (feedUrl) {
-    autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl });
+    // 自建/本地更新源统一用 generic provider；本地服务只支持单段 Range，
+    // 关掉多段 Range 让差分下载退化为逐个分段请求
+    autoUpdater.setFeedURL({ provider: 'generic', url: feedUrl, useMultipleRangeRequest: false });
   }
 
   autoUpdater.on('checking-for-update', () => report({ state: 'checking' }));
@@ -77,14 +82,20 @@ function setup(options = {}) {
 
 /** 检查是否有新版本 */
 async function checkForUpdates() {
+  writeLog.write('checkForUpdates\n');
   if (!isUpdatable()) {
+    writeLog.write('dev环境\n');
     report({ state: 'dev', message: DEV_HINT });
     return { ok: false, state: 'dev', message: DEV_HINT };
   }
   try {
+    writeLog.write('检查更新新版本\n');
+    // 检查更新新版本
     const result = await autoUpdater.checkForUpdates();
     return { ok: true, version: result?.updateInfo?.version ?? null };
   } catch (error) {
+    writeLog.write('检查更新新版本失败\n');
+    writeLog.write(error?.message || String(error));
     const message = error?.message || String(error);
     report({ state: 'error', message });
     return { ok: false, state: 'error', message };

@@ -10,6 +10,25 @@ const { Worker } = require('node:worker_threads');
 const updateTools = require('./updateTools');
 let db;
 let childProcess;
+
+/**
+ * 解析 index.html 加载路径（热更新入口）
+ * 优先级：userData/patches/<version>/index.html → __dirname/index.html
+ * 注意：补丁目录必须和 index.html 同目录放 renderer.js、styles.css 等同级资源
+ */
+function resolveRendererEntry() {
+  // 1. 热更新补丁（按版本隔离）
+  const patchedDir = path.join(app.getPath('userData'), 'patches', app.getVersion());
+  const patchedEntry = path.join(patchedDir, 'index.html');
+  if (fsSync.existsSync(patchedEntry)) {
+    console.log(`[热更] 使用补丁渲染入口: ${patchedEntry}`);
+    return patchedEntry;
+  }
+  // 2. 原始入口（asar 内，打包兜底 + 开发环境）
+  console.log(`[热更] 使用原始渲染入口: ${path.join(__dirname, 'index.html')}`);
+  return path.join(__dirname, 'index.html');
+}
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1000,
@@ -24,8 +43,17 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
-  updateTools.setup({ window: mainWindow });
+  mainWindow.loadFile(resolveRendererEntry());
+  updateTools.setup({
+    window: mainWindow,
+    // 更新源优先级：UPDATE_FEED_URL 环境变量 > config.json 的 updateFeedUrl > app-update.yml（GitHub Releases）
+    feedUrl: resolveUpdateFeedUrl(),
+  });
+
+  // 界面加载完成后自动检查一次更新（开发环境会直接返回 dev 状态）
+  mainWindow.webContents.once('did-finish-load', () => {
+    updateTools.checkForUpdates();
+  });
 }
 function createDatabase(){
   const dbPath = path.join(app.getPath('userData'), 'app.db');
@@ -41,7 +69,7 @@ function createDatabase(){
   db.pragma('foreign_keys = ON');
 }
 function createChildProcess(){
-  childProcess = spawn(process.execPath, [path.join(__dirname, 'child-server.js')], {
+  childProcess = spawn(process.execPath, [app.isPackaged ? path.join(process.resourcesPath, 'public/child-server.js') : path.join(__dirname, '../public/child-server.js')], {
     stdio: ['pipe', 'pipe', 'inherit'],
   });
   const rl = readline.createInterface({
@@ -102,10 +130,29 @@ ipcMain.handle('notes:list', () => {
 
 // ---------- 配置文件读写（原子写 + 备份） ----------
 
-// 配置文件路径
-const configPath = path.join(__dirname, '../config.json');
-const configTmpPath = path.join(os.tmpdir(), 'extest-mnt', 'config.json.tmp');
+// 配置文件路径：打包后从 resources/config.json 读取（extraResources 已包含），开发时用项目根目录
+const configPath = app.isPackaged
+  ? path.join(process.resourcesPath, 'public/config.json')
+  : path.join(__dirname, '../public/config.json');
+const configTmpPath = path.join(os.tmpdir(), 'extest-mnt', 'public/config.json.tmp');
 const configBakPath = configPath + '.bak';
+
+/**
+ * 解析更新源地址
+ * 优先级：UPDATE_FEED_URL 环境变量 > config.json 的 updateFeedUrl > undefined（走打包内置的 app-update.yml）
+ */
+function resolveUpdateFeedUrl() {
+  const fromEnv = process.env.UPDATE_FEED_URL;
+  if (fromEnv) return fromEnv;
+  try {
+    const config = JSON.parse(fsSync.readFileSync(configPath, 'utf8'));
+    return typeof config.updateFeedUrl === 'string' && config.updateFeedUrl.trim()
+      ? config.updateFeedUrl.trim()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
 /**
  * 读取配置
  * @returns {Promise<object>} 配置对象，文件不存在则返回 {}
@@ -182,6 +229,63 @@ ipcMain.handle('config:save', async (_event, newConfig) => {
     return { ok: false, error: e?.message || '未知错误' };
   }
 });
+
+/**
+ * 热更新：写入补丁文件到 userData/patches/<version>/
+ * @param {string} relativePath  相对补丁根目录的路径（如 'index.html'、'renderer.js'）
+ * @param {Buffer|string} content  文件内容
+ * @param {object} [opts]
+ * @param {string} [opts.sha512]  期望的 sha512（base64），传了就校验
+ */
+async function writeHotPatch(relativePath, content, opts = {}) {
+  const normalized = path.normalize(relativePath).replace(/^(\.\.(\/|\\|$))+/, '');
+  if (!normalized || normalized.startsWith('..')) {
+    throw new Error(`非法补丁路径: ${relativePath}`);
+  }
+  // 版本隔离：补丁放 userData/patches/<当前版本>/
+  const patchDir = path.join(app.getPath('userData'), 'patches', app.getVersion());
+  const target = path.join(patchDir, normalized);
+  // 防穿越
+  if (!target.startsWith(patchDir)) throw new Error(`路径越界: ${relativePath}`);
+
+  // sha512 校验（传了 expected 就必须匹配）
+  if (opts.sha512) {
+    const crypto = require('node:crypto');
+    const actual = crypto.createHash('sha512').update(content).digest('base64');
+    if (actual !== opts.sha512) {
+      throw new Error(`sha512 校验失败: 期望 ${opts.sha512.slice(0, 16)}..., 实际 ${actual.slice(0, 16)}...`);
+    }
+  }
+
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, content);
+  console.log(`[热更] 写入补丁: ${target} (${typeof content === 'string' ? Buffer.byteLength(content) : content.length}B)`);
+  return target;
+}
+
+// IPC：渲染进程调——写入热更新补丁
+// 用法：window.desktop.writeHotPatch('index.html', htmlContent, { sha512: '...' })
+ipcMain.handle('hotupdate:write-patch', async (_event, relativePath, content, opts) => {
+  try {
+    const targetPath = await writeHotPatch(relativePath, content, opts || {});
+    return { ok: true, path: targetPath };
+  } catch (err) {
+    console.error('[热更] 写入补丁失败:', err.message);
+    return { ok: false, error: err.message };
+  }
+});
+
+// IPC：渲染进程调——清理当前版本补丁（回退时用）
+ipcMain.handle('hotupdate:clear-patch', async () => {
+  const patchDir = path.join(app.getPath('userData'), 'patches', app.getVersion());
+  try {
+    await fs.rm(patchDir, { recursive: true, force: true });
+    console.log(`[热更] 已清理补丁目录: ${patchDir}`);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 // 单实例锁，防止多开
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -225,6 +329,25 @@ function readTmpDirSync() {
   return files;
 }
 app.whenReady().then(() => {
+  // 清理比当前版本老的补丁目录（回滚时保留当前版本，清除历史残留）
+  try {
+    const patchesRoot = path.join(app.getPath('userData'), 'patches');
+    if (fsSync.existsSync(patchesRoot)) {
+      const currentVer = app.getVersion();
+      fsSync.readdirSync(patchesRoot).forEach((versionDir) => {
+        if (versionDir !== currentVer && !versionDir.startsWith('.')) {
+          const fullPath = path.join(patchesRoot, versionDir);
+          if (fsSync.statSync(fullPath).isDirectory()) {
+            fsSync.rmSync(fullPath, { recursive: true, force: true });
+            console.log(`[热更] 清理旧补丁: ${versionDir}`);
+          }
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('[热更] 清理旧补丁异常:', e.message);
+  }
+
   createWindow();
   createDatabase();
   createChildProcess();

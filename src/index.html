@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; worker-src 'self'"
+      content="default-src 'self' http://127.0.0.1:3001 http://localhost:*; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self'; connect-src 'self' http://127.0.0.1:3001 http://localhost:*"
     />
     <title>Electron 桌面应用</title>
     <link rel="stylesheet" href="./styles.css" />
@@ -40,6 +40,27 @@
         <button id="workerTerminate">终止 Worker</button>
       </div>
       <div id="workerLog" style="margin-top:10px;max-height:200px;overflow-y:auto;border:1px solid #ccc;padding:6px;font-family:monospace;font-size:12px;"></div>
+    </main>
+
+    <main class="card">
+      <h2>应用更新</h2>
+      <p class="description" id="updateStatus">尚未检查更新</p>
+      <div>
+        <button id="updateCheckBtn">检查更新</button>
+        <button id="updateDownloadBtn" disabled>下载更新</button>
+        <button id="updateInstallBtn" disabled>重启并安装</button>
+        <button id="" >重启</button>
+      </div>
+    </main>
+
+    <main class="card">
+      <h2>前端热更新（仅测试用）</h2>
+      <p class="description">从本地更新服务（http://127.0.0.1:3001）拉取 index.html / renderer.js / styles.css，写入 userData/patches/&lt;version&gt;/ 并刷新。</p>
+      <div>
+        <button id="hotUpdateApplyBtn">应用热更新</button>
+        <button id="hotUpdateClearBtn">清除热更新补丁</button>
+      </div>
+      <div id="hotUpdateResult" style="margin-top:10px;min-height:40px;border:1px solid #ccc;padding:6px;font-family:monospace;font-size:12px;white-space:pre-wrap;"></div>
     </main>
 
     <main class="card">
