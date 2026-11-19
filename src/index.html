@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; worker-src 'self'"
     />
     <title>Electron 桌面应用</title>
     <link rel="stylesheet" href="./styles.css" />
@@ -27,6 +27,30 @@
       <span id="dataId"></span>
       <button id="renderProcess">查询渲染进程</button>
     </main>
-    <script src="./renderer.js"></script>
+
+    <main class="card">
+      <h2>Web Worker 通信演示</h2>
+      <div>
+        <button id="workerPing">Ping</button>
+        <button id="workerEcho">Echo</button>
+        <button id="workerSum">Sum 10k</button>
+        <button id="workerSumProgress">Sum 100w (带进度)</button>
+        <button id="workerFib">Fib(10000)</button>
+        <button id="workerDelay">Delay 500ms</button>
+        <button id="workerTerminate">终止 Worker</button>
+      </div>
+      <div id="workerLog" style="margin-top:10px;max-height:200px;overflow-y:auto;border:1px solid #ccc;padding:6px;font-family:monospace;font-size:12px;"></div>
+    </main>
+
+    <main class="card">
+      <h2>配置读写演示</h2>
+      <div>
+        <input id="configInput" type="text" style="width:320px;" placeholder='输入 JSON，如 {"theme":"dark","fontSize":14}' value='{"theme":"dark","fontSize":14}' />
+        <button id="configLoadBtn">读取配置</button>
+        <button id="configSaveBtn">保存配置</button>
+      </div>
+      <div id="configResult" style="margin-top:10px;min-height:40px;border:1px solid #ccc;padding:6px;font-family:monospace;font-size:12px;white-space:pre-wrap;"></div>
+    </main>
+    <script type="module" src="./renderer.js"></script>
   </body>
 </html>

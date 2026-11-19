@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>页面 A</title>
+    <meta charset="utf-8" />
+    <style>
+        body { font-family: -apple-system, sans-serif; padding: 16px; }
+        #log { margin-top: 12px; border-top: 1px solid #ccc; padding-top: 8px; }
+        .item { font-size: 13px; line-height: 1.8; }
+        .from { color: #666; }
+        .system { color: #0a7; }
+    </style>
+</head>
+<body>
+    <h3>页面 <span id="pageId"></span></h3>
+    <button onclick="sendMessage()">发送本页消息</button>
+    <button onclick="openB()">打开页面B</button>
+    <div id="log"></div>
+
+    <script>
+        var obj = {
+            [Symbol('fun')]: 22,
+            name: "huanglin"
+        }
+        const newObj = new Object(obj)
+        console.log(newObj.getOwnPropertySymbols())
+        // 每个窗口一个随机 id，用来区分是谁发的
+        const PAGE_ID = Math.random().toString(36).slice(2, 7);
+        document.getElementById('pageId').textContent = PAGE_ID;
+
+        const sharedWorker = new SharedWorker('shared.js');
+        const port = sharedWorker.port;
+        port.start();
+
+        var count = 0;
+
+        function log(text, className = '') {
+            const div = document.createElement('div');
+            div.className = 'item ' + className;
+            div.textContent = text;
+            const box = document.getElementById('log');
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function sendMessage() {
+            count += 1;
+            const text = `来自页面 ${PAGE_ID} 的第 ${count} 条消息`;
+            port.postMessage({ pageId: PAGE_ID, text });
+        }
+
+        function openB() {
+            window.open(location.href, '_blank');
+        }
+
+        port.onmessage = (event) => {
+            const data = event.data;
+            if (data.type === 'system') {
+                log(data.text, 'system');
+            } else {
+                log(`[${PATH_LABEL(data.from)}] ${data.text}`, '');
+            }
+        };
+
+        function PATH_LABEL(id) {
+            return id === PAGE_ID ? '本页' : '页面 ' + id;
+        }
+
+        sharedWorker.onerror = (e) => {
+            log('SharedWorker 出错: ' + e.message);
+        };
+
+        log(`本页 ${PAGE_ID} 已连接 SharedWorker`, 'system');
+    </script>
+</body>
+</html>

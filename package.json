@@ -8,11 +8,20 @@
     "start": "electron .",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "build:mac": "npm run rebuild && electron-builder --mac",
+    "build:win": "npm run rebuild && electron-builder --win",
+    "build:nsis": "npm run rebuild && electron-builder --nsis",
     "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer.js"
   },
   "build": {
     "appId": "com.example.myapp",
     "productName": "MyApp",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "hlxll",
+        "repo": "electronMoreSystem"
+      }
+    ],
     "electronDownload": {
       "mirror": "https://npmmirror.com/mirrors/electron/"
     },
@@ -22,13 +31,20 @@
     },
     "files": [
       "**/*",
-      "!dist"
+      "!dist",
+      "!node_modules/electron/**/*",
+      "!node_modules/electron-builder/**/*"
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*"
     ],
+    "extraResources": [
+      "public/AppIcon.icns",
+      "src/child-server.js",
+      "config.json"
+    ],
     "mac": {
-      "icon": "build/yellow.svg",
+      "icon": "./public/pardox.icns",
       "target": [
         "dmg",
         "zip"
@@ -41,6 +57,7 @@
     "electron-builder": "^26.15.3"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3"
+    "better-sqlite3": "^13.0.3",
+    "electron-updater": "^6.8.11"
   }
 }
